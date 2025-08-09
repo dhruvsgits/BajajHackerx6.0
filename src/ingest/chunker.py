@@ -3,7 +3,7 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 # or use your chunk_text() function you posted before
 from typing import List, Dict
 
-def chunk_for_embeddings(full_text: str, doc_name: str, chunk_size=800, overlap=150):
+def chunk_for_embeddings(full_text: str, doc_name: str, chunk_size=800, overlap=150, metadata=None):
     splitter = RecursiveCharacterTextSplitter(chunk_size=chunk_size, chunk_overlap=overlap)
     chunks = splitter.split_text(full_text)
     out=[]
