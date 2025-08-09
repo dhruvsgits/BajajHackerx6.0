@@ -1,4 +1,8 @@
 import numpy as np
+
+
+
+
 import faiss
 import os
 from src.vector.document_loader import load_documents
@@ -13,8 +17,7 @@ def build_index(data_folder="data", index_path="vector.index", meta_path="metada
     metadata = [{"source": doc["source"]} for doc in docs]
 
     embeddings = embed_texts(texts)
-    embeddings = np.array(embeddings).astype("float32")
-
+    \
     # Normalize vectors
     faiss.normalize_L2(embeddings)
 
