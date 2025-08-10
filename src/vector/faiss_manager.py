@@ -16,8 +16,18 @@ META_PATH = INDEX_DIR / "index_metadata.json"
 # ------------------------
 # EMBEDDINGS
 # ------------------------
-def embed_texts(texts: List[str]) -> List[List[float]]:
-    resp = co.embed(model="embed-english-v3.0", texts=texts)
+def embed_texts(texts: List[str], is_query: bool = False) -> List[List[float]]:
+    """
+    Embed text using Cohere with correct input_type.
+    - is_query=True  -> search_query
+    - is_query=False -> search_document
+    """
+    input_type = "search_query" if is_query else "search_document"
+    resp = co.embed(
+        model="embed-english-v3.0",
+        texts=texts,
+        input_type=input_type
+    )
     return resp.embeddings
 
 # ------------------------
@@ -25,7 +35,7 @@ def embed_texts(texts: List[str]) -> List[List[float]]:
 # ------------------------
 def build_index(chunks: List[dict], dim=1024):
     texts = [c["text_chunk"] for c in chunks]
-    embeddings = embed_texts(texts)
+    embeddings = embed_texts(texts, is_query=False)  # <-- search_document
     arr = np.array(embeddings).astype("float32")
     faiss.normalize_L2(arr)
     index = faiss.IndexFlatIP(arr.shape[1])  # cosine similarity via normalized vectors
@@ -58,29 +68,24 @@ def clause_match_and_filter(query: str, results: List[dict], similarity_threshol
     if not results:
         return []
 
-    # Prepare text list for similarity check
     candidate_texts = [r["text_chunk"] for r in results]
 
-    # Embed query + candidate clauses
-    embeddings = embed_texts([query] + candidate_texts)
-    query_emb = np.array(embeddings[0]).reshape(1, -1)
-    candidate_embs = np.array(embeddings[1:])
+    # Embed query with search_query
+    query_emb = np.array(embed_texts([query], is_query=True)).astype("float32")
+    # Embed candidates with search_document
+    candidate_embs = np.array(embed_texts(candidate_texts, is_query=False)).astype("float32")
 
-    # Normalize for cosine similarity
     faiss.normalize_L2(query_emb)
     faiss.normalize_L2(candidate_embs)
 
-    # Compute cosine similarity
     scores = (candidate_embs @ query_emb.T).flatten()
 
-    # Attach similarity scores and filter
     filtered = []
     for r, score in zip(results, scores):
         r["similarity_score"] = float(score)
         if score >= similarity_threshold:
             filtered.append(r)
 
-    # Sort by similarity score
     filtered.sort(key=lambda x: x["similarity_score"], reverse=True)
     return filtered
 
@@ -89,11 +94,10 @@ def clause_match_and_filter(query: str, results: List[dict], similarity_threshol
 # ------------------------
 def search(query: str, top_k: int = 5, similarity_threshold: float = 0.75) -> List[dict]:
     index, metadata = load_index()
-    query_emb = np.array(embed_texts([query])).astype("float32")
+    query_emb = np.array(embed_texts([query], is_query=True)).astype("float32")  # <-- search_query
     faiss.normalize_L2(query_emb)
     distances, indices = index.search(query_emb, top_k)
 
-    # Build raw result list
     results = []
     for idx, dist in zip(indices[0], distances[0]):
         if idx < len(metadata):
@@ -102,6 +106,5 @@ def search(query: str, top_k: int = 5, similarity_threshold: float = 0.75) -> Li
                 "faiss_score": float(dist)
             })
 
-    # Apply clause-level filtering
     filtered_results = clause_match_and_filter(query, results, similarity_threshold)
     return filtered_results
